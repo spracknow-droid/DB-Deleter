@@ -3,6 +3,11 @@ import sqlite3
 import io
 import streamlit as st
 
+# --- [추가] 데이터베이스 연결 설정 ---
+# 'my_data.db'라는 파일로 데이터를 저장합니다. 
+# 파일이 없으면 자동으로 생성됩니다.
+conn = sqlite3.connect('my_data.db', check_same_thread=False)
+
 # (기존 clean_data 함수가 있다고 가정)
 def clean_data(df, target_type):
     # 공백 제거 및 날짜 형식 변환 로직 (예시)
