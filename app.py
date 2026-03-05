@@ -16,6 +16,13 @@ def clean_data(df, target_type):
 # DB 연결 (기존 연결 객체 conn 사용 가정)
 # conn = sqlite3.connect('my_data.db', check_same_thread=False)
 
+# --- 파일 업로드 섹션 ---
+excel_files = st.file_uploader(
+    "엑셀 파일을 선택하세요 (다중 선택 가능)", 
+    type=['xlsx', 'xls'], 
+    accept_multiple_files=True  # 여러 파일을 받으려면 True여야 합니다
+)
+
 # --- 로직 2: 엑셀 파일 처리 ---
 if excel_files:
     for file in excel_files:
