@@ -2,87 +2,80 @@ import streamlit as st
 import sqlite3
 import os
 import tempfile
+import shutil
 
-st.set_page_config(page_title="SQLite 테이블 관리자", layout="wide")
+# 페이지 설정
+st.set_page_config(page_title="DB-Deleter", page_icon="🗑️")
+st.title("🗑️ DB-Deleter")
 
-st.title("📂 SQLite DB 관리 및 테이블 삭제 도구")
-st.markdown("사이드바에서 DB 파일을 업로드하고, 삭제할 테이블이나 뷰를 선택하세요.")
+# 1. 파일 업로드 관리 (Session State 이용)
+if 'db_path' not in st.session_state:
+    st.session_state.db_path = None
 
-# --- 사이드바: 파일 업로드 ---
 with st.sidebar:
     st.header("1. 파일 업로드")
     uploaded_file = st.file_uploader("SQLite DB 파일을 선택하세요", type=["db", "sqlite", "sqlite3"])
+    
+    if uploaded_file:
+        # 새로운 파일이 업로드되면 임시 파일 생성
+        if st.session_state.db_path is None:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
+                tmp.write(uploaded_file.getvalue())
+                st.session_state.db_path = tmp.name
+    else:
+        # 파일이 제거되면 경로 초기화
+        st.session_state.db_path = None
 
-if uploaded_file is not None:
-    # 임시 디렉토리에 파일 저장 (sqlite3는 파일 경로가 필요함)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp_file:
-        tmp_file.write(uploaded_file.getvalue())
-        tmp_path = tmp_file.name
-
+# 2. DB 작업 로직
+if st.session_state.db_path and os.path.exists(st.session_state.db_path):
     try:
-        # DB 연결
-        conn = sqlite3.connect(tmp_path)
+        conn = sqlite3.connect(st.session_state.db_path)
         cursor = conn.cursor()
 
-        # --- 데이터베이스 구조 읽기 ---
-        # 물리적 테이블과 VIEW를 모두 가져옵니다.
+        # 목록 가져오기
         cursor.execute("SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%';")
         items = cursor.fetchall()
-        
-        tables = [item[0] for item in items if item[1] == 'table']
-        views = [item[0] for item in items if item[1] == 'view']
+        tables = [i[0] for i in items if i[1] == 'table']
+        views = [i[0] for i in items if i[1] == 'view']
 
-        # --- 메인 화면: 정보 표시 ---
         col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("📊 물리적 테이블")
-            st.write(tables if tables else "테이블이 없습니다.")
-            
-        with col2:
-            st.subheader("👁️ VIEW 목록")
-            st.write(views if views else "View가 없습니다.")
+        col1.write("📊 **Tables:**")
+        col1.write(tables)
+        col2.write("👁️ **Views:**")
+        col2.write(views)
 
         st.divider()
 
-        # --- 삭제 섹션 ---
-        st.header("2. 테이블/뷰 삭제")
-        all_options = tables + views
-        to_delete = st.multiselect("삭제할 항목을 선택하세요 (영구 삭제되니 주의하세요!)", all_options)
-
-        if st.button("선택한 항목 삭제 실행"):
+        # 3. 삭제 실행
+        to_delete = st.multiselect("삭제할 항목 선택", tables + views)
+        
+        if st.button("🔥 선택한 항목 삭제 실행"):
             if to_delete:
                 for name in to_delete:
-                    target_type = "TABLE" if name in tables else "VIEW"
-                    cursor.execute(f"DROP {target_type} IF EXISTS {name}")
+                    # 테이블인지 뷰인지 판별해서 삭제
+                    t_type = "TABLE" if name in tables else "VIEW"
+                    cursor.execute(f"DROP {t_type} IF EXISTS {name}")
                 
                 conn.commit()
-                # 공간 최적화 (파일 용량 줄이기)
-                conn.execute("VACUUM")
-                st.success(f"성공적으로 삭제되었습니다: {', '.join(to_delete)}")
-                st.rerun() # 상태 업데이트를 위해 재실행
+                conn.execute("VACUUM") # 실제 파일 용량 줄이기
+                st.success(f"'{', '.join(to_delete)}' 삭제 완료!")
+                st.rerun() # 변경사항 반영을 위해 앱 재실행
             else:
-                st.warning("삭제할 항목을 선택하지 않았습니다.")
+                st.warning("삭제할 항목을 먼저 선택하세요.")
 
-        # --- 다운로드 섹션 ---
+        # 4. 다운로드
         st.divider()
-        st.header("3. 결과 다운로드")
-        
-        with open(tmp_path, "rb") as f:
+        with open(st.session_state.db_path, "rb") as f:
             st.download_button(
-                label="수정된 DB 파일 다운로드",
+                label="✅ 삭제 반영된 DB 다운로드",
                 data=f,
-                file_name=f"modified_{uploaded_file.name}",
+                file_name=f"deleted_{uploaded_file.name if uploaded_file else 'db'}.db",
                 mime="application/x-sqlite3"
             )
-
+        
         conn.close()
 
     except Exception as e:
-        st.error(f"에러가 발생했습니다: {e}")
-    
-    finally:
-        # 임시 파일 삭제는 세션 종료 시나 로직에 따라 관리 필요
-        pass
-
+        st.error(f"오류 발생: {e}")
 else:
-    st.info("왼쪽 사이드바에서 SQLite 파일을 업로드해주세요.")
+    st.info("파일을 업로드하면 DB-Deleter가 가동됩니다.")
